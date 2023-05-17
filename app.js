@@ -41,35 +41,81 @@ app.use(express.json());
 app.post('/api/player', (req, res) => {
   const { name, email } = req.body;
 
-  // Create a new user instance
-  const user = new User({ name, email });
+  // Check if user with email already exists
+  User.findOne({ email })
+    .then((existingUser) => {
+      if (existingUser) {
+        User.findOneAndUpdate({ email }, { name }, { new: true })
+          .then((updatedUser) => {
+            if (!updatedUser) {
+              return res.status(404).json({ error: 'User not found' });
+            }
+          })
+          .catch((error) => {
+            console.error('Error updating user:', error);
+            res.status(500).json({ error: 'Internal server error' });
+          });
 
-  // Save the user to the database
-  user
-    .save()
-    .then(() => {
-      res.status(201).json({ message: 'Player created successfully' });
+        return res.status(201).json({
+          error: 'User already exists',
+          isUserExist: true,
+          userDetails: existingUser,
+        });
+      }
+
+      // Create a new user instance
+      const newUser = new User({ name, email, highscore: 0 });
+
+      // Save the user to the database
+      newUser
+        .save()
+        .then((savedUser) => {
+          res.status(201).json({
+            message: 'User created successfully',
+            isUserExist: false,
+            userDetails: savedUser,
+          });
+        })
+        .catch((error) => {
+          console.error('Error saving user:', error);
+          res.status(500).json({ error: 'Internal server error' });
+        });
     })
     .catch((error) => {
-      console.error('Error saving user:', error);
+      console.error('Error checking existing user:', error);
       res.status(500).json({ error: 'Internal server error' });
     });
 });
 
 app.post('/api/saveScore', (req, res) => {
-  const { email, score } = req.body;
+  const { email, highscore } = req.body;
 
-  db.collection('scores')
-    .insertOne({ email, score })
-    .then((result) => {
-      res.status(200).json({ success: true, data: result.ops[0] });
+  User.findOneAndUpdate({ email }, { highscore }, { new: true })
+    .then((updatedUser) => {
+      if (!updatedUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      res.status(201).json({ message: 'Score updated', updatedUser });
     })
     .catch((error) => {
-      console.error(error);
-      res.status(500).json({ error: 'Unable to save score' });
+      console.error('Error updating user:', error);
+      res.status(500).json({ error: 'Internal server error' });
     });
 });
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);
+});
+
+app.get('/api/leaderboard', (req, res) => {
+  User.find()
+    .sort({ highscore: -1 })
+    .limit(10)
+    .then((users) => {
+      res.json(users);
+    })
+    .catch((error) => {
+      console.error('Error retrieving top users:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    });
 });
